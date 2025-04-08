@@ -1,6 +1,7 @@
 const WebSocket = require("ws");
 const express = require("express");
 const http = require("http");
+const cors = require("cors");
 
 const app = express();
 app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
