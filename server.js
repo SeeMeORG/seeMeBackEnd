@@ -3,6 +3,8 @@ const express = require("express");
 const http = require("http");
 
 const app = express();
+app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
+
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 const clients = new Set();
