@@ -2,6 +2,5 @@
   "version": 2,
   "builds": [{ "src": "server.js", "use": "@vercel/node" }],
   "routes": [{ "src": "/(.*)", "dest": "/server.js" }],
-  "name": "seeme-api-dev",
-  "orgId": "team_KTEuGDisShWq1ZZNwPE17Acw"
+  "name": "seeme-api-dev"
 }
