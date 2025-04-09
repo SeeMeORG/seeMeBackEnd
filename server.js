@@ -1,64 +1,93 @@
 const WebSocket = require("ws");
 const express = require("express");
 const http = require("http");
+const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
 
 const app = express();
-app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
-
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// We'll store each client with extra state (available/busy, partner)
-const clients = new Map(); // Map<WebSocket, { status: 'available' | 'busy', partner: WebSocket | null }>
+const clients = new Map(); // id -> ws
+const availableUsers = []; // queue of ready users
+const pairs = new Map(); // id -> partnerId
 
-wss.on("connection", function connection(ws) {
-  console.log("Client connected");
-  clients.set(ws, { status: "available", partner: null });
+app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
 
-  ws.on("message", function incoming(message) {
-    const parsedMessage = JSON.parse(message.toString());
+app.get("/", (req, res) => {
+  res.json({ message: "WebSocket server is running" });
+});
 
-    if (parsedMessage.type === "ready") {
-      matchUser(ws);
-    } else if (parsedMessage.type === "signal") {
-      const partner = clients.get(ws)?.partner;
-      if (partner && partner.readyState === WebSocket.OPEN) {
-        partner.send(JSON.stringify({ type: "signal", signal: parsedMessage.signal }));
+wss.on("connection", (ws) => {
+  const id = uuidv4();
+  clients.set(id, ws);
+  ws.id = id;
+
+  console.log(`Client connected: ${id}`);
+
+  ws.send(JSON.stringify({ type: "welcome", id }));
+
+  ws.on("message", (msg) => {
+    let data;
+    try {
+      data = JSON.parse(msg.toString());
+    } catch (e) {
+      return;
+    }
+
+    if (data.type === "ready") {
+      console.log(`User ready: ${id}`);
+      if (availableUsers.length > 0) {
+        const partnerId = availableUsers.shift();
+        const partnerSocket = clients.get(partnerId);
+        if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
+          // Create the room (match both)
+          pairs.set(id, partnerId);
+          pairs.set(partnerId, id);
+
+          // Notify both
+          ws.send(JSON.stringify({ type: "ready", target: partnerId }));
+          partnerSocket.send(JSON.stringify({ type: "ready", target: id }));
+        }
+      } else {
+        // Add self to waiting list
+        availableUsers.push(id);
+      }
+    }
+
+    // Route signal to matched peer
+    if (data.type === "signal" && data.signal) {
+      const targetId = pairs.get(id);
+      const targetSocket = clients.get(targetId);
+      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+        targetSocket.send(JSON.stringify({
+          type: "signal",
+          signal: data.signal,
+          from: id,
+        }));
       }
     }
   });
 
   ws.on("close", () => {
-    console.log("Client disconnected...");
-    const { partner } = clients.get(ws) || {};
-    if (partner && partner.readyState === WebSocket.OPEN) {
-      partner.send(JSON.stringify({ type: "partner-disconnected" }));
-      clients.set(partner, { status: "available", partner: null });
+    console.log(`Client disconnected: ${id}`);
+    clients.delete(id);
+    const index = availableUsers.indexOf(id);
+    if (index !== -1) {
+      availableUsers.splice(index, 1);
     }
-    clients.delete(ws);
+
+    const partnerId = pairs.get(id);
+    if (partnerId) {
+      const partnerSocket = clients.get(partnerId);
+      if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
+        partnerSocket.send(JSON.stringify({ type: "partner_disconnected" }));
+      }
+      pairs.delete(partnerId);
+      pairs.delete(id);
+    }
   });
-
-  ws.send(JSON.stringify({ type: "welcome", message: "Connected to server" }));
 });
-
-function matchUser(ws) {
-  const userInfo = clients.get(ws);
-  if (!userInfo || userInfo.status !== "available") return;
-
-  for (let [otherWs, otherInfo] of clients) {
-    if (otherWs !== ws && otherInfo.status === "available") {
-      // Match found
-      clients.set(ws, { status: "busy", partner: otherWs });
-      clients.set(otherWs, { status: "busy", partner: ws });
-
-      // Notify both users to start signaling
-      ws.send(JSON.stringify({ type: "ready" }));
-      otherWs.send(JSON.stringify({ type: "ready" }));
-      break;
-    }
-  }
-}
 
 server.listen(8080, () => {
   console.log("WebSocket server running at ws://localhost:8080");
