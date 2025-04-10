@@ -12,7 +12,13 @@ const clients = new Map(); // id -> ws
 const availableUsers = []; // queue of ready users
 const pairs = new Map(); // id -> partnerId
 
-app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
 app.get("/", (req, res) => {
   res.json({ message: "WebSocket server is running" });
@@ -45,9 +51,20 @@ wss.on("connection", (ws) => {
           pairs.set(id, partnerId);
           pairs.set(partnerId, id);
 
-          // Notify both
-          ws.send(JSON.stringify({ type: "ready", target: partnerId }));
-          partnerSocket.send(JSON.stringify({ type: "ready", target: id }));
+          // ✅ Assign roles
+          // `id` is the initiator (second person to be ready)
+          // `partnerId` is the responder
+
+          ws.send(
+            JSON.stringify({
+              type: "start",
+              initiator: true,
+              target: partnerId,
+            })
+          );
+          partnerSocket.send(
+            JSON.stringify({ type: "start", initiator: false, target: id })
+          );
         }
       } else {
         // Add self to waiting list
@@ -60,11 +77,13 @@ wss.on("connection", (ws) => {
       const targetId = pairs.get(id);
       const targetSocket = clients.get(targetId);
       if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-        targetSocket.send(JSON.stringify({
-          type: "signal",
-          signal: data.signal,
-          from: id,
-        }));
+        targetSocket.send(
+          JSON.stringify({
+            type: "signal",
+            signal: data.signal,
+            from: id,
+          })
+        );
       }
     }
   });
