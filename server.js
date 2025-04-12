@@ -44,11 +44,17 @@ function pairUsers(userAId, userBId) {
 
   if (!wsA || !wsB) return;
 
-  pairs.set(userAId, userBId);
-  pairs.set(userBId, userAId);
+  // Clear any old pairing
+  pairs.delete(userAId);
+  pairs.delete(userBId);
 
   availableUsers.delete(userAId);
   availableUsers.delete(userBId);
+
+  pairs.set(userAId, userBId);
+  pairs.set(userBId, userAId);
+
+  console.log(`Pairing users: ${userAId} <--> ${userBId}`);
 
   if (wsA.readyState === WebSocket.OPEN) {
     wsA.send(
@@ -96,7 +102,8 @@ wss.on("connection", (ws) => {
       if (!clients.has(id)) return;
 
       if (!pairs.has(id)) {
-        if (!tryToPairUser(id)) {
+        const paired = tryToPairUser(id);
+        if (!paired) {
           availableUsers.add(id);
         }
       }
@@ -107,7 +114,12 @@ wss.on("connection", (ws) => {
     if (data.type === "signal" && data.signal) {
       const targetId = pairs.get(id);
       const targetSocket = clients.get(targetId);
-      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+
+      if (
+        targetSocket &&
+        targetSocket.readyState === WebSocket.OPEN &&
+        pairs.get(targetId) === id // ensure valid pairing
+      ) {
         targetSocket.send(
           JSON.stringify({ type: "signal", signal: data.signal, from: id })
         );
@@ -121,17 +133,21 @@ wss.on("connection", (ws) => {
     availableUsers.delete(id);
 
     const partnerId = pairs.get(id);
-    if (partnerId) {
-      pairs.delete(id);
-      pairs.delete(partnerId);
+    pairs.delete(id);
 
+    if (partnerId) {
+      pairs.delete(partnerId);
       const partnerSocket = clients.get(partnerId);
+
       if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
         availableUsers.add(partnerId);
+
         partnerSocket.send(JSON.stringify({ type: "partner_disconnected" }));
 
-        // Try to re-pair the partner
-        tryToPairUser(partnerId);
+        // Delay re-pairing to give frontend time to reset
+        setTimeout(() => {
+          tryToPairUser(partnerId);
+        }, 100);
       }
     }
 
