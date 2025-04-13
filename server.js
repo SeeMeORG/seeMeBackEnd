@@ -8,8 +8,7 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const clients = new Map(); // id -> ws
-const availableUsers = new Set(); // Set of available user ids
+const clients = []; // { id, name, ws, available }
 const pairs = new Map(); // id -> partnerId
 
 app.use(
@@ -24,65 +23,71 @@ app.get("/", (req, res) => {
   res.json({ message: "WebSocket server is running" });
 });
 
+function getClientById(id) {
+  return clients.find((c) => c.id === id);
+}
+
 function broadcastUserCounts() {
+  const total = clients.length;
+  const available = clients.filter((c) => c.available).length;
+
   const payload = JSON.stringify({
     type: "updateUsers",
-    total: clients.size,
-    available: availableUsers.size,
+    total,
+    available,
+    clients
   });
 
-  for (const client of clients.values()) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(payload);
+  for (const { ws } of clients) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(payload);
     }
   }
 }
 
-function pairUsers(userAId, userBId) {
-  const wsA = clients.get(userAId);
-  const wsB = clients.get(userBId);
+function pairUsers(userA, userB) {
+  pairs.delete(userA.id);
+  pairs.delete(userB.id);
 
-  if (!wsA || !wsB) return;
+  userA.available = false;
+  userB.available = false;
 
-  // Clear any old pairing
-  pairs.delete(userAId);
-  pairs.delete(userBId);
+  pairs.set(userA.id, userB.id);
+  pairs.set(userB.id, userA.id);
 
-  availableUsers.delete(userAId);
-  availableUsers.delete(userBId);
+  console.log(`Pairing users: ${userA.name} <--> ${userB.name}`);
 
-  pairs.set(userAId, userBId);
-  pairs.set(userBId, userAId);
-
-  console.log(`Pairing users: ${userAId} <--> ${userBId}`);
-
-  if (wsA.readyState === WebSocket.OPEN) {
-    wsA.send(
-      JSON.stringify({ type: "start", initiator: true, target: userBId })
+  if (userA.ws.readyState === WebSocket.OPEN) {
+    userA.ws.send(
+      JSON.stringify({ type: "start", initiator: true, target: userB.id })
     );
   }
 
-  if (wsB.readyState === WebSocket.OPEN) {
-    wsB.send(
-      JSON.stringify({ type: "start", initiator: false, target: userAId })
+  if (userB.ws.readyState === WebSocket.OPEN) {
+    userB.ws.send(
+      JSON.stringify({ type: "start", initiator: false, target: userA.id })
     );
   }
 }
 
-function tryToPairUser(userId) {
-  for (const otherId of availableUsers) {
-    if (otherId !== userId) {
-      pairUsers(userId, otherId);
-      return true;
-    }
+function tryToPairUser(user) {
+  const other = clients.find(
+    (c) => c.id !== user.id && c.available && !pairs.has(c.id)
+  );
+
+  if (other) {
+    pairUsers(user, other);
+    return true;
   }
+
+  user.available = true;
   return false;
 }
 
 wss.on("connection", (ws) => {
   const id = uuidv4();
-  clients.set(id, ws);
-  ws.id = id;
+  const client = { id, name: null, ws, available: false };
+  clients.push(client);
 
   console.log(`Client connected: ${id}`);
   ws.send(JSON.stringify({ type: "welcome", id }));
@@ -96,31 +101,28 @@ wss.on("connection", (ws) => {
       return;
     }
 
+    const current = getClientById(id);
+    if (!current) return;
+
     if (data.type === "ready") {
-      console.log(`User ready: ${id}`);
-
-      if (!clients.has(id)) return;
-
-      if (!pairs.has(id)) {
-        const paired = tryToPairUser(id);
-        if (!paired) {
-          availableUsers.add(id);
-        }
+      current.name = data.name || "Anonymous";
+      console.log(`User ready: ${current.id} (${current.name})`);
+      if (!pairs.has(current.id)) {
+        tryToPairUser(current);
       }
-
       broadcastUserCounts();
     }
 
     if (data.type === "signal" && data.signal) {
       const targetId = pairs.get(id);
-      const targetSocket = clients.get(targetId);
+      const target = getClientById(targetId);
 
       if (
-        targetSocket &&
-        targetSocket.readyState === WebSocket.OPEN &&
-        pairs.get(targetId) === id // ensure valid pairing
+        target &&
+        target.ws.readyState === WebSocket.OPEN &&
+        pairs.get(targetId) === id
       ) {
-        targetSocket.send(
+        target.ws.send(
           JSON.stringify({ type: "signal", signal: data.signal, from: id })
         );
       }
@@ -129,24 +131,22 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log(`Client disconnected: ${id}`);
-    clients.delete(id);
-    availableUsers.delete(id);
+    const index = clients.findIndex((c) => c.id === id);
+    if (index !== -1) clients.splice(index, 1);
 
     const partnerId = pairs.get(id);
     pairs.delete(id);
 
     if (partnerId) {
       pairs.delete(partnerId);
-      const partnerSocket = clients.get(partnerId);
+      const partner = getClientById(partnerId);
 
-      if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
-        availableUsers.add(partnerId);
+      if (partner && partner.ws.readyState === WebSocket.OPEN) {
+        partner.available = true;
+        partner.ws.send(JSON.stringify({ type: "partner_disconnected" }));
 
-        partnerSocket.send(JSON.stringify({ type: "partner_disconnected" }));
-
-        // Delay re-pairing to give frontend time to reset
         setTimeout(() => {
-          tryToPairUser(partnerId);
+          tryToPairUser(partner);
         }, 100);
       }
     }
