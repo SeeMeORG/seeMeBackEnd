@@ -55,8 +55,6 @@ function pairUsers(userA, userB) {
   pairs.set(userA.id, userB.id);
   pairs.set(userB.id, userA.id);
 
-  console.log(`Pairing users: ${userA.name} <--> ${userB.name}`);
-
   if (userA.ws.readyState === WebSocket.OPEN) {
     userA.ws.send(
       JSON.stringify({ type: "start", initiator: true, target: userB.id })
@@ -65,7 +63,7 @@ function pairUsers(userA, userB) {
 
   if (userB.ws.readyState === WebSocket.OPEN) {
     userB.ws.send(
-      JSON.stringify({ type: "start", initiator: false, target: userA.id })
+      JSON.stringify({ type: "start", initiator: false, target: userA.id, targetName: userA?.name ?? "Anonymous" })
     );
   }
 }
@@ -89,7 +87,6 @@ wss.on("connection", (ws) => {
   const client = { id, name: null, ws, available: false };
   clients.push(client);
 
-  console.log(`Client connected: ${id}`);
   ws.send(JSON.stringify({ type: "welcome", id }));
   broadcastUserCounts();
 
@@ -106,7 +103,6 @@ wss.on("connection", (ws) => {
 
     if (data.type === "ready") {
       current.name = data.name || "Anonymous";
-      console.log(`User ready: ${current.id} (${current.name})`);
       if (!pairs.has(current.id)) {
         tryToPairUser(current);
       }
@@ -123,14 +119,13 @@ wss.on("connection", (ws) => {
         pairs.get(targetId) === id
       ) {
         target.ws.send(
-          JSON.stringify({ type: "signal", signal: data.signal, from: id })
+          JSON.stringify({ type: "signal", signal: data.signal, from: id, participantName: "xxxx" })
         );
       }
     }
   });
 
   ws.on("close", () => {
-    console.log(`Client disconnected: ${id}`);
     const index = clients.findIndex((c) => c.id === id);
     if (index !== -1) clients.splice(index, 1);
 
@@ -156,5 +151,5 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(8080, () => {
-  console.log("WebSocket server running at ws://localhost:8080");
+  console.log("WebSocket server running...");
 });
