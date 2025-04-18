@@ -57,7 +57,7 @@ function pairUsers(userA, userB) {
 
   if (userA.ws.readyState === WebSocket.OPEN) {
     userA.ws.send(
-      JSON.stringify({ type: "start", initiator: true, target: userB.id })
+      JSON.stringify({ type: "start", initiator: true, target: userB.id, targetName: userB?.name ?? "Anonymous" })
     );
   }
 
