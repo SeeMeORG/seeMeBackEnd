@@ -35,7 +35,7 @@ function broadcastUserCounts() {
     type: "updateUsers",
     total,
     available,
-    clients
+    clients,
   });
 
   for (const { ws } of clients) {
@@ -57,13 +57,23 @@ function pairUsers(userA, userB) {
 
   if (userA.ws.readyState === WebSocket.OPEN) {
     userA.ws.send(
-      JSON.stringify({ type: "start", initiator: true, target: userB.id, targetName: userB?.name ?? "Anonymous" })
+      JSON.stringify({
+        type: "start",
+        initiator: true,
+        target: userB.id,
+        targetName: userB?.name ?? "Anonymous",
+      })
     );
   }
 
   if (userB.ws.readyState === WebSocket.OPEN) {
     userB.ws.send(
-      JSON.stringify({ type: "start", initiator: false, target: userA.id, targetName: userA?.name ?? "Anonymous" })
+      JSON.stringify({
+        type: "start",
+        initiator: false,
+        target: userA.id,
+        targetName: userA?.name ?? "Anonymous",
+      })
     );
   }
 }
@@ -103,9 +113,16 @@ wss.on("connection", (ws) => {
 
     if (data.type === "ready") {
       current.name = data.name || "Anonymous";
-      if (!pairs.has(current.id)) {
-        tryToPairUser(current);
+
+      const oldPartnerId = pairs.get(current.id);
+      if (oldPartnerId) {
+        pairs.delete(oldPartnerId);
+        pairs.delete(current.id);
       }
+
+      current.available = true;
+
+      tryToPairUser(current);
       broadcastUserCounts();
     }
 
@@ -119,9 +136,42 @@ wss.on("connection", (ws) => {
         pairs.get(targetId) === id
       ) {
         target.ws.send(
-          JSON.stringify({ type: "signal", signal: data.signal, from: id, participantName: "xxxx" })
+          JSON.stringify({
+            type: "signal",
+            signal: data.signal,
+            from: id,
+          })
         );
       }
+    }
+
+    if (data.type === "next") {
+      const oldPartnerId = pairs.get(current.id);
+
+      if (oldPartnerId) {
+        const partner = getClientById(oldPartnerId);
+
+        pairs.delete(current.id);
+        pairs.delete(oldPartnerId);
+
+        if (partner && partner.ws.readyState === WebSocket.OPEN) {
+          partner.available = true;
+          partner.ws.send(JSON.stringify({ type: "partner_disconnected" }));
+
+          setTimeout(() => {
+            tryToPairUser(partner);
+            broadcastUserCounts();
+          }, 100);
+        }
+      }
+
+      current.available = true;
+      current.ws.send(JSON.stringify({ type: "partner_disconnected" }));
+
+      setTimeout(() => {
+        tryToPairUser(current);
+        broadcastUserCounts();
+      }, 100);
     }
   });
 
