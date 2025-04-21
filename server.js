@@ -79,11 +79,14 @@ function pairUsers(userA, userB) {
 }
 
 function tryToPairUser(user) {
-  const other = clients.find(
+  const availableOthers = clients.filter(
     (c) => c.id !== user.id && c.available && !pairs.has(c.id)
   );
 
-  if (other) {
+  if (availableOthers.length > 0) {
+    const randomIndex = Math.floor(Math.random() * availableOthers.length);
+    const other = availableOthers[randomIndex];
+
     pairUsers(user, other);
     return true;
   }
