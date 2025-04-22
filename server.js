@@ -8,8 +8,8 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const clients = []; // { id, name, ws, available }
-const pairs = new Map(); // id -> partnerId
+const clients = [];
+const pairs = new Map();
 
 app.use(
   cors({
@@ -46,11 +46,26 @@ function broadcastUserCounts() {
 }
 
 function pairUsers(userA, userB) {
-  pairs.delete(userA.id);
-  pairs.delete(userB.id);
+  if (!userA || !userB) return;
+  if (userA.id === userB.id) return;
+
+  const aPartner = pairs.get(userA.id);
+  const bPartner = pairs.get(userB.id);
+
+  if (aPartner) {
+    pairs.delete(aPartner);
+    pairs.delete(userA.id);
+  }
+  if (bPartner) {
+    pairs.delete(bPartner);
+    pairs.delete(userB.id);
+  }
 
   userA.available = false;
   userB.available = false;
+
+  userA.lastPartnerId = userB.id;
+  userB.lastPartnerId = userA.id;
 
   pairs.set(userA.id, userB.id);
   pairs.set(userB.id, userA.id);
@@ -79,18 +94,37 @@ function pairUsers(userA, userB) {
 }
 
 function tryToPairUser(user) {
-  const availableOthers = clients.filter(
-    (c) => c.id !== user.id && c.available && !pairs.has(c.id)
-  );
+  if (!user || !user.available) return false;
 
-  console.log("avail ----> ", availableOthers.length);
+  user.available = false;
+
+  const availableOthers = clients.filter((c) => {
+    if (c.id === user.id) return false;
+    if (!c.available) return false;
+    if (pairs.has(c.id)) return false;
+    if (c.id === user.lastPartnerId) return false;
+    return true;
+  });
 
   if (availableOthers.length > 0) {
     const randomIndex = Math.floor(Math.random() * availableOthers.length);
-    console.log("random ---> ", randomIndex);
     const other = availableOthers[randomIndex];
 
+    if (pairs.has(user.id) || pairs.has(other.id)) {
+      console.warn("Pairing race condition avoided");
+      return false;
+    }
+
     pairUsers(user, other);
+    return true;
+  }
+
+  const fallback = clients.find((c) => {
+    return c.id !== user.id && c.available && !pairs.has(c.id);
+  });
+
+  if (fallback) {
+    pairUsers(user, fallback);
     return true;
   }
 
