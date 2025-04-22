@@ -83,8 +83,11 @@ function tryToPairUser(user) {
     (c) => c.id !== user.id && c.available && !pairs.has(c.id)
   );
 
+  console.log("avail ----> ", availableOthers.length);
+
   if (availableOthers.length > 0) {
     const randomIndex = Math.floor(Math.random() * availableOthers.length);
+    console.log("random ---> ", randomIndex);
     const other = availableOthers[randomIndex];
 
     pairUsers(user, other);
