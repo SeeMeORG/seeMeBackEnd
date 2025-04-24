@@ -23,11 +23,11 @@ app.get("/", (req, res) => {
   res.json({ message: "WebSocket server is running" });
 });
 
-function getClientById(id) {
+const getClientById=(id)=>{
   return clients.find((c) => c.id === id);
 }
 
-function broadcastUserCounts() {
+ const broadcastUserCounts=() =>{
   const total = clients.length;
   const available = clients.filter((c) => c.available).length;
 
@@ -45,7 +45,7 @@ function broadcastUserCounts() {
   }
 }
 
-function pairUsers(userA, userB) {
+const pairUsers=(userA, userB)=> {
   if (!userA || !userB) return;
   if (userA.id === userB.id) return;
 
@@ -93,7 +93,7 @@ function pairUsers(userA, userB) {
   }
 }
 
-function tryToPairUser(user) {
+const tryToPairUser=(user)=>{
   if (!user || !user.available) return false;
 
   user.available = false;
