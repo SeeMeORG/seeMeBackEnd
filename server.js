@@ -23,11 +23,11 @@ app.get("/", (req, res) => {
   res.json({ message: "WebSocket server is running" });
 });
 
-const getClientById=(id)=>{
+const getClientById = (id) => {
   return clients.find((c) => c.id === id);
-}
+};
 
- const broadcastUserCounts=() =>{
+const broadcastUserCounts = () => {
   const total = clients.length;
   const available = clients.filter((c) => c.available).length;
 
@@ -43,9 +43,9 @@ const getClientById=(id)=>{
       ws.send(payload);
     }
   }
-}
+};
 
-const pairUsers=(userA, userB)=> {
+const pairUsers = (userA, userB) => {
   if (!userA || !userB) return;
   if (userA.id === userB.id) return;
 
@@ -91,9 +91,9 @@ const pairUsers=(userA, userB)=> {
       })
     );
   }
-}
+};
 
-const tryToPairUser=(user)=>{
+const tryToPairUser = (user) => {
   if (!user || !user.available) return false;
 
   user.available = false;
@@ -130,7 +130,7 @@ const tryToPairUser=(user)=>{
 
   user.available = true;
   return false;
-}
+};
 
 wss.on("connection", (ws) => {
   const id = uuidv4();
